@@ -4,7 +4,7 @@ slug: /
 sidebar_position: 1
 ---
 
-# Cheeko Backend Overview
+# Cheeko - Backend Overview
 
 ![Cheeko Hero](/img/cheeko-hero.png.jpeg)
 
