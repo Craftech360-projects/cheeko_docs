@@ -3,7 +3,7 @@ id: manager-web
 sidebar_position: 1
 ---
 
-# Admin Dashboard (Manager Web)
+# Admin Dashboard (Manager Web)  
 
 ![Admin Dashboard](/img/admin-header.jpeg)
 
