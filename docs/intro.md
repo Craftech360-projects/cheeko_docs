@@ -4,7 +4,7 @@ slug: /
 sidebar_position: 1
 ---
 
-# Cheeko - Backend Overview
+# Cheeko - Backend Overview 
 
 ![Cheeko Hero](/img/cheeko-hero.png.jpeg)
 
@@ -23,7 +23,7 @@ Cheeko is an AI companion for children (ages 3–16) running on ESP32 devices. T
 | **ESP32 Firmware** | C++ / ESP-IDF | On-device client — state machine, audio pipeline, MQTT, RFID |
 | **Parent App** | Flutter | iOS/Android app for parents — device setup, kid profiles, content |
 
-## High-Level Data Flow
+## High-Level Data Flow. 
 
 ```
 ESP32 Device ──MQTT/UDP──> mqtt-gateway ──WebSocket──> LiveKit Cloud
