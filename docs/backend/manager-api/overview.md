@@ -85,6 +85,8 @@ All routes are mounted under the `/toy` context path.
 | `/toy/admin` | `admin.routes.js` | Admin utilities |
 | `/toy/config` | `config.routes.js` | Runtime configuration |
 | `/toy/usage` | `usage.routes.js` | Usage tracking |
+| `/toy/quota` | `quota.routes.js` | Question, token, time, and game-session quota endpoints |
+| `/toy/subscription` | `subscription.routes.js` | Subscription plans, unified quota checks, and AI Card time quota |
 | `/toy/ota` | `ota.routes.js` | OTA firmware check (device-facing) |
 | `/toy/otaMag` | `otaMag.routes.js` | OTA firmware management (admin) |
 | `/toy/admin/server` | `server.routes.js` | Server management |
@@ -92,6 +94,12 @@ All routes are mounted under the `/toy` context path.
 | `/toy/admin/dict` | `dict.routes.js` | Data dictionary |
 | `/toy/ttsVoice` | `ttsVoice.routes.js` | TTS voice configuration |
 | `/toy/admin/email-reports` | `emailReport.routes.js` | Email report scheduling |
+
+## Subscription and AI Card Quota
+
+The `aicard_subscription` branch adds a prepaid AI Card time quota system under `/toy/subscription`. AI Card quota is keyed by physical RFID card (`rfid_uid`) rather than user or device, and active voice sessions consume connected seconds from the card's monthly balance.
+
+See [AI Card Subscription](./ai-card-subscription.md) for the endpoint reference, quota flow, database objects, MQTT messages, and admin dashboard behavior.
 
 ## Health Endpoints
 

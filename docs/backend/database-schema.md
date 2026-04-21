@@ -14,6 +14,10 @@ Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents
 - `sys_user_token` — session tokens
 - `parent_profile` — parent-facing profile and notification preferences
 - `user_question_quota` — monthly RFID question usage quota per user
+- `user_token_quota` — monthly weighted token usage quota per user
+- `user_time_quota` — monthly connected-time usage quota per user
+- `subscription_plan` — available subscription tiers and quota limits
+- `user_subscription` — active and historical user subscription records
 
 ### Devices
 - `ai_device` — registered ESP32 devices
@@ -45,6 +49,7 @@ Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents
 - `rfid_question_pack` — bundles of questions referenced by ID list
 - `rfid_question` — individual RFID-triggered questions
 - `rfid_card_mapping` — explicit UID-to-content assignments
+- `ai_card_time_quota` — monthly prepaid time usage for physical AI cards
 - `rfid_content_pack` — content packs with cached audio
 - `content_item` — individual items within a content pack
 - `ai_rfid_tag` — legacy RFID tag definitions

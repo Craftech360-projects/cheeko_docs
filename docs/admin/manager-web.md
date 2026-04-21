@@ -61,7 +61,7 @@ Create a `.env.local` file in `main/manager-web/` to set these during developmen
 
 The dashboard uses a custom token-based auth system stored in `localStorage`. The token is issued by the manager-api backend (`/toy/user/login`). A route guard in `src/router/index.js` checks for the presence of a `token` key in `localStorage` before allowing access to protected routes. Unauthenticated users are redirected to `/login`.
 
-Protected routes include: home, role-config, device-management, user-management, token-analytics, rfid-management, kid-profiles, all-devices, template-management, content-library, email-reports, game-analytics.
+Protected routes include: home, role-config, device-management, user-management, token-analytics, rfid-management, kid-profiles, all-devices, template-management, content-library, email-reports, game-analytics, and quota-settings.
 
 ## Views / Screens
 
@@ -89,6 +89,7 @@ The following screens are defined in `src/views/` and registered in `src/router/
 | `/token-analytics` | `TokenAnalytics.vue` | LLM token usage analytics and reporting |
 | `/game-analytics` | `GameAnalytics.vue` | Game session analytics (math, riddles, word ladder) |
 | `/email-reports` | `EmailReportSettings.vue` | Email report scheduling and recipient settings |
+| `/quota-settings` | `QuotaSettings.vue` | Subscription quota settings and AI Card time quota management |
 
 ## Key Features
 
@@ -100,3 +101,4 @@ The following screens are defined in `src/views/` and registered in `src/router/
 - **Prompt Templates** — edit the AI agent system prompt templates used by the livekit-server workers.
 - **Analytics** — monitor LLM token consumption and game session data per device/user.
 - **Voice Print** — manage voice print profiles associated with devices.
+- **Quota Settings** — configure default quota type, free-tier limits, subscription plans, AI Card fail mode, AI Card usage analytics, linked cards, and card recharge.

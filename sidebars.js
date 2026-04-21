@@ -28,6 +28,7 @@ const sidebars = {
             'backend/manager-api/agent',
             'backend/manager-api/content',
             'backend/manager-api/rfid',
+            'backend/manager-api/ai-card-subscription',
           ],
         },
         {
