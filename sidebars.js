@@ -29,6 +29,7 @@ const sidebars = {
             'backend/manager-api/content',
             'backend/manager-api/rfid',
             'backend/manager-api/ai-card-subscription',
+            'backend/manager-api/mobile-api',
           ],
         },
         {
@@ -42,7 +43,18 @@ const sidebars = {
         },
         {
           type: 'category',
-          label: 'LiveKit Server (AI)',
+          label: 'Voice Agent (Go · picoclaw)',
+          items: [
+            'backend/voice-agent/overview',
+            'backend/voice-agent/voice-pipeline',
+            'backend/voice-agent/workspace-persona',
+            'backend/voice-agent/config-deployment',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Legacy: LiveKit Server (Python)',
+          collapsed: true,
           items: [
             'backend/livekit-server/overview',
             'backend/livekit-server/cheeko-agent',
@@ -51,6 +63,11 @@ const sidebars = {
           ],
         },
       ],
+    },
+    {
+      type: 'category',
+      label: 'Imagine Server',
+      items: ['imagine/overview', 'imagine/image-pipeline'],
     },
     {
       type: 'category',

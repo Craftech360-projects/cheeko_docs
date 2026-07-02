@@ -17,7 +17,7 @@ The UDP socket is created in `MQTTGateway.start()` using Node.js `dgram`:
 
 ```js
 this.udpServer = dgram.createSocket('udp4');
-this.udpServer.bind(this.udpPort);    // default port: 1883 (UDP_PORT env var)
+this.udpServer.bind(this.udpPort);    // UDP_PORT env var; code default 1883, .env.example ships 8884
 ```
 
 The gateway binds on all interfaces (`0.0.0.0`). The public IP returned to devices in the `hello` response comes from `PUBLIC_IP` env var (default `127.0.0.1`).
@@ -94,14 +94,15 @@ ESP32 microphone
    │ Opus encoded at 16 kHz mono, 60 ms frames
    │ AES-128-CTR encrypted
    ▼
-UDP socket (port 1883)
+UDP socket (UDP_PORT)
    │
 MQTTGateway.onUdpMessage
    │ Parse 16-byte header, look up VirtualMQTTConnection by connectionId
    │
 VirtualMQTTConnection.onUdpMessage
    │ Decrypt payload (AES-128-CTR)
-   │ Forward to bridge.onUdpMessage
+   │ Forward via bridge.sendAudio(payload, timestamp)
+   │ (ai_imagine sessions: frames are buffered for the Imagine server instead — no bridge)
    │
 LiveKitBridge
    │ Decode Opus → PCM via WorkerPoolManager.decodeOpus
@@ -109,7 +110,7 @@ LiveKitBridge
    │   Frame size: 960 samples (60 ms at 16 kHz)
    │
 LiveKit room local participant
-   └── Publish PCM audio track → LiveKit Cloud → AI agent
+   └── Publish PCM audio track → LiveKit → Voice agent (Go)
 ```
 
 **Sample rate:** 16 000 Hz (incoming from device)

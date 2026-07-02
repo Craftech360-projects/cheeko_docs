@@ -7,7 +7,11 @@ sidebar_position: 1
 
 ![MCP Device Control Flow](/img/MCP_device_control.jpeg)
 
-MCP is the internal JSON-RPC-based protocol that allows AI agents running in `livekit-server` (Python) to control ESP32 hardware functions — volume, LED lighting, and battery status — through the MQTT gateway. Commands travel from the AI agent over a LiveKit data channel to the gateway, which reformats them as MQTT messages and forwards them to the ESP32 device. Responses travel the reverse path.
+MCP is the internal JSON-RPC-based protocol for controlling ESP32 hardware functions — volume, LED lighting, and battery status — through the MQTT gateway. Commands arrive at the gateway over a LiveKit data channel (or from the mobile app as MQTT `function_call` messages), are reformatted as JSON-RPC MQTT messages, and forwarded to the ESP32 device. Responses travel the reverse path.
+
+:::warning Current status
+The agent→gateway MCP publisher described below was implemented in the **retired Python livekit-server** (`mcp_client.py` / `mcp_executor.py`). The current Go voice agent (picoclaw-livekit) does **not** publish `mcp_function_call` data-channel messages — so agent-initiated device control is presently unimplemented. The gateway side (`mcp-handler.js`) and the device-side protocol remain live and are used by the mobile app's remote-control commands.
+:::
 
 ## Flow Diagram
 

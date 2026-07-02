@@ -61,7 +61,7 @@ Create a `.env.local` file in `main/manager-web/` to set these during developmen
 
 The dashboard uses a custom token-based auth system stored in `localStorage`. The token is issued by the manager-api backend (`/toy/user/login`). A route guard in `src/router/index.js` checks for the presence of a `token` key in `localStorage` before allowing access to protected routes. Unauthenticated users are redirected to `/login`.
 
-Protected routes include: home, role-config, device-management, user-management, token-analytics, rfid-management, kid-profiles, all-devices, template-management, content-library, email-reports, game-analytics, and quota-settings.
+Protected routes include: home, role-config, device-management, user-management, token-analytics, rfid-management, bulk-import, kid-profiles, all-devices, template-management, content-library, email-reports, runtime-providers, game-analytics, and quota-settings.
 
 ## Views / Screens
 
@@ -86,6 +86,8 @@ The following screens are defined in `src/views/` and registered in `src/router/
 | `/template-management` | `TemplateManagement.vue` | Agent prompt template management |
 | `/content-library` | `ContentLibrary.vue` | Music, story, and textbook content management |
 | `/rfid-management` | `RfidManagement.vue` | RFID tag registration and content mapping |
+| `/bulk-import` | `BulkImport.vue` | RFID bulk import |
+| `/runtime-providers` | `RuntimeProviders.vue` | Active LLM / STT / TTS provider configuration for the voice agent |
 | `/token-analytics` | `TokenAnalytics.vue` | LLM token usage analytics and reporting |
 | `/game-analytics` | `GameAnalytics.vue` | Game session analytics (math, riddles, word ladder) |
 | `/email-reports` | `EmailReportSettings.vue` | Email report scheduling and recipient settings |
@@ -98,7 +100,12 @@ The following screens are defined in `src/views/` and registered in `src/router/
 - **Content Library** — upload and manage audio content (music, stories) and textbooks served to devices.
 - **RFID Management** — map RFID tags to content items for physical card-triggered playback.
 - **Kid Profiles** — create and edit child profiles that drive personalized AI prompts.
-- **Prompt Templates** — edit the AI agent system prompt templates used by the livekit-server workers.
+- **Prompt Templates** — edit the AI agent system prompt templates consumed by the Go voice agent's persona system.
+- **Runtime Providers** — switch the active LLM/STT/TTS provider that the voice agent pulls via `/toy/livekit/providers/active`.
 - **Analytics** — monitor LLM token consumption and game session data per device/user.
 - **Voice Print** — manage voice print profiles associated with devices.
 - **Quota Settings** — configure default quota type, free-tier limits, subscription plans, AI Card fail mode, AI Card usage analytics, linked cards, and card recharge.
+
+:::note Persona editor (admin-dashboard)
+A separate standalone app, `main/admin-dashboard/` (Express, port 4000), edits agent personas — `AGENT.md` (`system_prompt`) and `SOUL.md` (`soul`) — by proxying `/api/*` to the Manager API's `/admin-dashboard/*` routes (gated by `ADMIN_PASSWORD`). It complements manager-web rather than replacing it.
+:::

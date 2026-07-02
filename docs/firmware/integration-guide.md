@@ -63,11 +63,11 @@ sidebar_position: 1
                │ REST HTTP                     │ LiveKit SDK (WebRTC)
                ▼                              ▼
 ┌─────────────────────────┐      ┌────────────────────────────────────┐
-│   Manager API (Node.js) │      │   LiveKit Cloud + livekit-server   │
-│   main/manager-api-node │      │   workers/cheeko_worker.py         │
-│   - Device registry      │      │   workers/math_tutor_worker.py    │
-│   - OTA check/activate   │      │   workers/riddle_solver_worker.py │
-│   - RFID card lookup     │      │   workers/word_ladder_worker.py   │
+│   Manager API (Node.js) │      │   LiveKit + Voice Agent (Go)       │
+│   main/manager-api-node │      │   picoclaw-livekit                 │
+│   - Device registry      │      │   - single worker: cheeko-agent   │
+│   - OTA check/activate   │      │   - characters = personas from    │
+│   - RFID card lookup     │      │     Manager API (room metadata)   │
 │   - Agent config/prompts │      └────────────────────────────────────┘
 │   - Content manifest     │
 │   - Child profiles       │
@@ -289,24 +289,15 @@ Device-Id: AA:BB:CC:DD:EE:FF
 Content-Type: application/json
 ```
 
-**Body (with serial-number HMAC flow):**
-
-```json
-{
-  "algorithm": "hmac-sha256",
-  "serial_number": "<serial>",
-  "challenge": "AA:BB:CC:DD:EE:FF",
-  "hmac": "<hex-hmac>"
-}
-```
+**Body:** ignored by the server. The device is identified solely by the `Device-Id` header (MAC address); activation status is `device.user_id` being set. No HMAC verification is performed — a firmware-sent `{algorithm, serial_number, challenge, hmac}` body is simply not read.
 
 ### Responses
 
 | HTTP Status | Body | Meaning |
 |---|---|---|
-| `200` | `success` (plain text) | Device is activated — proceed to MQTT connect |
-| `202` | (empty) | Not activated yet — retry after ~3s |
-| `202` | (empty) | Any error condition also returns 202 |
+| `200` | `success` (plain text) | Device is activated (bound to a user) — proceed to MQTT connect |
+| `200` | full OTA JSON payload | Device exists but is **not activated yet** — retry after ~3s |
+| `202` | (empty) | Missing `Device-Id` header, or server error |
 
 ### Firmware Rules
 
@@ -320,7 +311,7 @@ activating state:
     │
     ├─ POST /toy/ota/activate
     │   ├─ 200 "success" → proceed to MQTT connect
-    │   └─ 202 → wait 3s → retry (up to 10 times)
+    │   └─ 200 (OTA JSON) / 202 → wait 3s → retry (up to 10 times)
     │
     └─ After 10 failures → wait ~10s → retry full cycle
 ```
@@ -484,18 +475,11 @@ After hello, the gateway queries the Manager API in background before sending `m
 
 **`mode` values:** `conversation` | `music` | `story`
 
-**`listening_mode` values:** `auto` | `manual` | `realtime`
+**`listening_mode` values:** `auto` | `manual`
 
-**`character` values and their corresponding LiveKit agents:**
+**Character → agent dispatch:**
 
-| `character` | LiveKit Agent Dispatched |
-|---|---|
-| `Cheeko` | `cheeko-agent` |
-| `Math Tutor` | `math-tutor-agent` |
-| `Riddle Solver` | `riddle-solver-agent` |
-| `Word Ladder` | `word-ladder-agent` |
-
-After sending `mode_update`, the gateway dispatches the appropriate LiveKit agent worker for the session.
+All characters are served by a single LiveKit agent worker — the Go **picoclaw-livekit** binary. The gateway dispatches the character's `runtimeAgentName` from the Manager API, or `LIVEKIT_DEFAULT_AGENT` (default **`cheeko-agent`**) when unset. The character name and child profile are passed to the worker via LiveKit room metadata, and the worker applies the matching persona (`system_prompt` / `soul`) pulled from the Manager API. There are no per-character agent processes anymore.
 
 ---
 
@@ -1333,8 +1317,7 @@ Base path: `/toy` (all endpoints below are relative to it).
 | `POST` | `/agent/device/:mac/set-character` | Set specific character |
 | `POST` | `/agent/device/:mac/cycle-character` | Cycle to next character |
 | `POST` | `/config/child-profile-by-mac` | Get child profile (age, name, preferences) |
-| `GET` | `/device/:mac/playlist/music` | Get music playlist |
-| `GET` | `/device/:mac/playlist/story` | Get story playlist |
+| `POST` | `/admin/rfid/card/tap` | Card-tap handshake (logs tap, reports content freshness) |
 | `GET` | `/admin/rfid/card/lookup/:rfidUid` | RFID card lookup |
 | `GET` | `/admin/rfid/card/content/download/:rfidUid` | Content pack download manifest |
 
@@ -1411,10 +1394,14 @@ Gateway receives card_lookup from device
         }
 ```
 
-Gateway then decides:
-- `story_pack` / `rhyme_pack` / `habit_pack` → also calls `GET /toy/admin/rfid/card/content/download/:rfidUid` → sends `card_content` to firmware
-- `prompt` / `prompt_pack` → sends `promptText` as `user_text` to LiveKit agent data channel
-- `read_only` → sends `contentText` as `user_text` with read_only flag to agent
+The gateway first POSTs a card-tap handshake to `/toy/admin/rfid/card/tap` (logs the tap and reports whether the device's cached content is current — if it is, the gateway sends a `card_up_to_date` message instead of a manifest), then calls the lookup. It routes by data shape:
+- Content packs (items with `audioUrl`, or grouped `stories[]`) → `card_content` manifest built directly from the lookup response (includes `content_type`, `update_required`, `latest_version`, `download_manifest_path`, `replace_mode`)
+- Prompt cards (`contentType: "prompt"`, no items) → with no active session, `card_ai` is sent to the device (may include `agent_name`); with an active conversation, the prompt is routed to the voice agent
+- Q&A packs (items with `promptText`) → prompt text forwarded to the voice agent
+
+:::caution
+The gateway still publishes `user_text` on the LiveKit data channel for prompt routing, but the current Go voice agent has **no `user_text` handler** — this path worked with the retired Python worker and is currently a gap.
+:::
 
 ---
 
@@ -1444,15 +1431,16 @@ These are internal messages between the MQTT Gateway and the LiveKit Python agen
 | `lk.transcription` | User/agent transcription stream | Send `stt`/`llm text` to device |
 | `lk.agent.events` | Agent lifecycle events | Track agent join/leave |
 
-### 17.3 `cheeko_worker.py` Handled Message Types
+### 17.3 Voice Agent (picoclaw-livekit) Handled Message Types
 
-The Python agent worker explicitly handles:
+The Go agent worker (`pkg/livekit/room_session.go`) explicitly handles:
 - `ready_for_greeting` → sends greeting to child
-- `end_prompt` → graceful session end
-- `shutdown_request` → hard shutdown
-- `user_text` → inject as user message (for RFID prompt routing)
+- `end_prompt` → speaks a closing line before session end
+- `shutdown_request` → graceful shutdown
+- `abort` → interrupts the active pipeline (stops speaking)
+- `session_language_update` → switches session language
 
-**Known gap:** `ptt_event`, `speech_end`, and `abort` are sent by the gateway to the agent but the worker does not have explicit handlers for these — they are handled by the LiveKit SDK's built-in agent session flow.
+**Known gap:** `user_text` (RFID prompt routing) is published by the gateway but has no handler in the Go agent — it was consumed by the retired Python worker.
 
 ---
 
@@ -1463,7 +1451,7 @@ Use these values for compatibility with current backend behavior:
 | Timeout | Duration | Action |
 |---|---|---|
 | Server hello wait | 10s | Retry or fall back |
-| Listening inactivity | 30s | Send goodbye, go idle |
+| Gateway inactivity timeout | 2 min | Gateway closes the session (`goodbye` with `inactivity_timeout`) |
 | Thinking (after speech_end) | 20s | Close session, go idle |
 | Unknown RFID response | 10s | Show "not recognized" |
 | Activation retry interval | ~3s | Retry `/ota/activate` |

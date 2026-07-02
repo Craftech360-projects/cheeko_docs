@@ -15,7 +15,7 @@ Cards fall into three categories:
 
 - **Content cards** — pre-recorded story packs, rhyme packs, and habit packs. Tapping delivers an audio manifest directly to the device. No LiveKit or LLM is involved.
 - **Q&A cards** (`prompt` / `prompt_pack`) — a specific question prompt is forwarded to the LiveKit AI agent, which generates a spoken answer. The conversation is question-scoped: the agent answers the prompt, not a free chat.
-- **AI conversation cards** (`card_type=ai`) — triggers open, unscripted conversation with the AI agent. No prompt text is sent — the card just signals the agent to start an interactive conversation session with the child.
+- **AI conversation cards** — triggers open, unscripted conversation with the AI agent. No prompt text is sent — the card just signals the agent to start an interactive conversation session with the child. (The gateway classifies these by data shape: `contentType: "prompt"` with no content items; the `card_type` DB column is informational.)
 
 ---
 
@@ -38,11 +38,12 @@ ESP32 checks SD card cache (cardmap.jsn)
                         ▼
                Gateway classifies response by data shape:
                ┌─────────────────────────────────────────┐
-               │ items have audioUrl?  → Content Pack     │
+               │ items have audioUrl?   → Content Pack    │
                │ items have promptText? → Q&A Pack        │
-               │ top-level promptText?  → Single Prompt   │
-               │ card_type = ai?        → AI Conv. Card   │
-               │ no match?             → card_unknown     │
+               │ contentType "prompt",  → AI/prompt card  │
+               │   no items               (state-dependent│
+               │                           routing)       │
+               │ no match?              → card_unknown    │
                └─────────────────────────────────────────┘
                         │
           ┌─────────────┼──────────────────┐
@@ -65,7 +66,7 @@ ESP32 checks SD card cache (cardmap.jsn)
 | Habit Pack | `habit_pack` | Direct audio manifest sent to device | Morning routine steps with audio |
 | Q&A Single | `prompt` | A specific question (`promptText`) sent to the LiveKit agent; agent answers that question | "What does a dog say?" |
 | Q&A Pack | `prompt_pack` | One question from a pack (selected by `sequence` number) sent to agent; agent answers it | Animal Friends Q&A pack |
-| AI Conversation Card | `prompt` with `card_type=ai` | **No prompt text sent.** Gateway sends `card_ai` to device; device prewarmes the conversation channel. Child speaks freely — unscripted open conversation with the agent | Cheeko character card, Math Tutor card |
+| AI Conversation Card | `prompt`, no items | **No prompt text sent.** With no active session the gateway sends `card_ai` (may include `agent_name`) and the device prewarms the conversation channel; with an active conversation it switches character or routes the prompt | Cheeko character card, Math Tutor card |
 | Bulk Range | `prompt` (series) | Card UID falls within a numeric range mapped to a question | Flashcard sets |
 
 The gateway classifies content cards and Q&A cards using **data-shape detection** — it looks for `audioUrl` vs `promptText` in the returned items array, not by matching the `contentType` string. This means any new content type added to the backend is automatically handled.
@@ -90,11 +91,11 @@ When a child taps an RFID card:
 {"session_id": "uuid-abc123", "type": "card_lookup", "rfid_uid": "04A1B2C3D4"}
 ```
 
-Some firmware versions send `text_greeting` or `start_greeting_text` instead of `card_lookup`. The gateway handles all three message types identically.
+Some firmware versions send `start_greeting_text` instead of `card_lookup`. The gateway handles these two message types identically (a third variant, `text_greeting`, is **not** matched by the gateway's routing).
 
 ```json
 {
-  "type": "text_greeting",
+  "type": "start_greeting_text",
   "rfid_uid": "E96C8A82",
   "sequence": 1,
   "timestamp": 1710000000000
@@ -105,7 +106,7 @@ Fields:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | yes | `card_lookup`, `text_greeting`, or `start_greeting_text` |
+| `type` | string | yes | `card_lookup` or `start_greeting_text` |
 | `rfid_uid` | string | yes | Hex UID of the scanned card |
 | `sequence` | integer | no | For Q&A packs: which question to use (defaults to 1) |
 | `session_id` | string | no | Active session ID if a conversation is in progress |
@@ -225,11 +226,13 @@ After classifying the Manager API response, the gateway sends one of the followi
 {"type": "card_unknown", "rfid_uid": "04A1B2C3D4"}
 ```
 
-**card_ai** — Mapped as AI card (no content pack, card_type = `ai`):
+**card_ai** — AI/prompt card with no active session (may include `agent_name`):
 
 ```json
-{"type": "card_ai", "rfid_uid": "04A1B2C3D4"}
+{"type": "card_ai", "rfid_uid": "04A1B2C3D4", "agent_name": "cheeko-agent"}
 ```
+
+**card_up_to_date** — sent when the card-tap handshake (`POST /toy/admin/rfid/card/tap`) reports the device's cached content is already current; no manifest follows.
 
 **card_content / download_response** — Content pack found (stories, rhymes, habits):
 
@@ -299,12 +302,14 @@ For Q&A cards and AI cards, the gateway forwards a `user_text` message to the Li
 }
 ```
 
-The agent (`cheeko_worker.py`) processes the `user_text` message as a standard user utterance:
+:::caution Current gap
+The behaviors below were implemented by the **retired Python worker** (`cheeko_worker.py`). The current Go voice agent (picoclaw-livekit) has **no `user_text` handler**, so Q&A prompt injection is presently not consumed on the agent side:
 
-- If `audio_url` is present and non-null, the agent can play the cached audio instead of generating a new response via TTS. This avoids LLM and TTS cost for repeated card taps.
-- If `system_prompt_override` is present, the agent uses it as the system prompt for this interaction only.
-- If `allow_caching` is true, the agent saves the generated audio to S3 and updates the `cached_audio_url` field in the database for future card taps.
-- The agent does not change its conversation mode or character based on the card tap — it responds in its current persona with the injected prompt text.
+- If `audio_url` is present and non-null, the agent could play the cached audio instead of generating a new response via TTS.
+- If `system_prompt_override` is present, the agent used it as the system prompt for this interaction only.
+- If `allow_caching` is true, the agent saved the generated audio to S3 and updated `cached_audio_url` for future taps.
+- The agent did not change its conversation mode or character based on the card tap.
+:::
 
 **AI card prewarm flow:**
 

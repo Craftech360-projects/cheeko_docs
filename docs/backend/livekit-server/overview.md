@@ -3,6 +3,10 @@ id: overview
 sidebar_position: 1
 ---
 
+:::warning Deprecated
+The Python livekit-server has been replaced by the **Go voice agent (picoclaw-livekit)** — see [Voice Agent Overview](../voice-agent/overview.md). The Python code remains at `main/livekit-server` but is no longer deployed. This page is kept for historical reference.
+:::
+
 # LiveKit Server Overview
 
 ![AI Agent](/img/ai-agent-header.jpeg)

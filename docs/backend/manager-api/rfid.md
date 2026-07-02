@@ -42,7 +42,7 @@ When an ESP32 device scans an RFID card, it calls the public lookup endpoint to 
 | `GET` | `/toy/admin/rfid/pack/page` | Admin | Paginated pack list |
 | `GET` | `/toy/admin/rfid/pack/list` | Admin | All packs |
 | `GET` | `/toy/admin/rfid/pack/active` | None | All active packs (public) |
-| `GET` | `/toy/admin/rfid/pack/code/:packCode` | None | Get pack by code |
+| `GET` | `/toy/admin/rfid/pack/code/:packCode` | Admin | Get pack by code |
 | `POST` | `/toy/admin/rfid/pack` | Admin | Create pack |
 | `PUT` | `/toy/admin/rfid/pack` | Admin | Update pack |
 | `DELETE` | `/toy/admin/rfid/pack` | Admin | Delete pack |
@@ -295,7 +295,7 @@ Public endpoint. Returns all active packs. No authentication required.
 
 ### GET `/toy/admin/rfid/pack/code/:packCode`
 
-Returns a single pack by its code. No authentication required.
+Returns a single pack by its code. Requires admin authentication.
 
 ### POST `/toy/admin/rfid/pack` — Create pack
 

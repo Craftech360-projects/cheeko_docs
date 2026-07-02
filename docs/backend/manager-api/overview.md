@@ -27,13 +27,13 @@ Middleware is applied in the following order in `src/app.js`:
 | Middleware | File | Purpose |
 |---|---|---|
 | `helmet` | `express` | Sets secure HTTP headers (CORS resource policy: cross-origin) |
-| `cors` | `express` | Allows configurable origins; defaults to `localhost:8080` and `localhost:3000`. Reads `CORS_ORIGINS` env var. |
+| `cors` | `express` | Allows configurable origins; defaults include `localhost:8080`, `localhost:3000`, `localhost:5173`, `localhost:4173`. Reads `CORS_ORIGINS` env var. |
+| Request ID | `src/middleware/requestId.js` | Attaches a unique `X-Request-ID` to every request |
 | `trust proxy` | `express` | Enables correct IP identification behind nginx/load balancer |
 | Rate limiter | `express-rate-limit` | 5000 req / 15 min window per IP; returns `429` with `{ code: 429, msg: "..." }` |
 | `express.json` | `express` | Parses JSON bodies up to 10 MB |
 | `express.urlencoded` | `express` | Parses URL-encoded bodies up to 10 MB |
-| XSS filter | `src/middleware/xssFilter.js` | Sanitizes request body/query to strip XSS payloads |
-| Request ID | `src/middleware/requestId.js` | Attaches a unique `X-Request-ID` to every request |
+| XSS filter | `src/middleware/xssFilter.js` | Sanitizes request body/query to strip XSS payloads (skipped for workspace-file routes) |
 | Morgan logger | `morgan` | HTTP access logging; dev format in development, compact format in production |
 | Routes | `src/routes/index.js` | All API routes under `/toy` |
 | 404 handler | `src/middleware/errorHandler.js` | Returns `{ code: 404, msg: "..." }` for unknown routes |
@@ -94,6 +94,22 @@ All routes are mounted under the `/toy` context path.
 | `/toy/admin/dict` | `dict.routes.js` | Data dictionary |
 | `/toy/ttsVoice` | `ttsVoice.routes.js` | TTS voice configuration |
 | `/toy/admin/email-reports` | `emailReport.routes.js` | Email report scheduling |
+| `/toy/livekit` | `livekitProviders.routes.js` | Active LLM/STT/TTS provider config for the Go voice agent (`GET /toy/livekit/providers/active`, service-key auth) |
+| `/toy/imagine` | `imagine.routes.js` | Generated-image upload/delivery (S3/MinIO backed, CDN URLs) — used by the AI Imagine pipeline |
+| `/toy/device-sync` | `deviceSync.routes.js` | Device settings sync events |
+| `/admin-dashboard` | `admin-dashboard/` (repo sibling) | Persona editor (AGENT.md / SOUL.md) — mounted outside `/toy` |
+
+## Voice Agent Integration
+
+The Manager API is the **control plane** for the Go voice agent (picoclaw-livekit) — it does not issue LiveKit room tokens or touch media:
+
+- At session start the worker pulls provider config from `GET /toy/livekit/providers/active` and the persona/child profile via `GET /toy/agent/device/{mac}/bootstrap`.
+- At session end the worker persists chat history, summaries, memories, and token usage back (`voice_sessions*` tables, `/toy/agent/saveMemory/{mac}`, session summary/end endpoints).
+- Per-device workspace files and distributed **workspace locks** (fencing tokens, last-tap-wins) are managed through agent routes.
+
+## MQTT Gateway Integration
+
+The API never speaks MQTT itself. To push settings to a device it calls the gateway's internal HTTP API — `POST {MQTT_GATEWAY_INTERNAL_URL}/internal/settings/publish-update` (default `http://127.0.0.1:8091`) with an `X-Service-Key` header — and the gateway publishes a `settings_update` MQTT message and reports acks/state back.
 
 ## Subscription and AI Card Quota
 
@@ -150,16 +166,17 @@ NODE_ENV=development
 # Primary database
 DATABASE_URL=postgresql://user:pass@host:5432/dbname?sslmode=require
 
-# Supabase (legacy admin auth only)
+# Supabase (legacy — clients still instantiated, but auth and queries run through Prisma)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Service-to-service auth (LiveKit agents, MQTT gateway)
+# Service-to-service auth (voice agent, MQTT gateway)
 SERVICE_SECRET_KEY=your-service-secret
 
 # Firebase (mobile app auth)
-FIREBASE_SERVICE_ACCOUNT_KEY=<base64 or path>
+FIREBASE_PROJECT_ID=cheekoai
+FIREBASE_SERVICE_ACCOUNT_PATH=./cheekoai-firebase-adminsdk.json
 
 # Vector search
 QDRANT_URL=https://your-cluster.qdrant.io
@@ -167,4 +184,23 @@ QDRANT_API_KEY=your-qdrant-api-key
 
 # Memory/personalization
 MEM0_API_KEY=your-mem0-api-key
+
+# MQTT gateway internal API (settings push)
+MQTT_GATEWAY_INTERNAL_URL=http://127.0.0.1:8091
+
+# Storage / CDN (content + imagine images)
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+S3_BUCKET_NAME=...
+CLOUDFRONT_DOMAIN=cdn.cheekoai.in
+USE_CDN=true
+
+# Voice agent defaults
+LIVEKIT_URL=wss://your-livekit-server
+LIVEKIT_DEFAULT_AGENT=cheeko-agent
+
+# Email reports (optional)
+SMTP_HOST=...
+SMTP_USER=...
+SMTP_PASS=...
 ```

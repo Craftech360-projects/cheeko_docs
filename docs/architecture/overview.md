@@ -13,35 +13,39 @@ sidebar_position: 1
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        ESP32 Device (Firmware)                      │
 │  - State machine (idle/connecting/listening/speaking/...)           │
-│  - MQTT client                                                       │
-│  - UDP socket (AES-128-CTR encrypted Opus audio)                    │
-│  - SD card (RFID skill cache)                                       │
-│  - RFID reader                                                       │
+│  - MQTT client · UDP socket (AES-128-CTR encrypted Opus audio)      │
+│  - RFID reader · SD card cache · thermal printer · LCD              │
 └──────────────┬──────────────────────────────┬───────────────────────┘
-               │ MQTT (publish/subscribe)      │ UDP (audio packets)
+               │ MQTT (publish/subscribe)     │ UDP (audio packets)
                ▼                              ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                   MQTT/UDP Gateway (Node.js)                        │
-│  main/mqtt-gateway/                                                  │
-│  - EMQX MQTT broker bridge                                           │
-│  - UDP server (AES-128-CTR encrypted Opus audio)                    │
-│  - VirtualMQTTConnection per device                                  │
-│  - LiveKitBridge (per device session)                               │
-│  - Calls Manager API for device config/RFID lookups                 │
-└──────────────┬──────────────────────────────┬───────────────────────┘
-               │ REST HTTP                     │ LiveKit SDK (WebRTC)
-               ▼                              ▼
-┌─────────────────────────┐      ┌────────────────────────────────────┐
-│   Manager API (Node.js) │      │   LiveKit Cloud + livekit-server   │
-│   main/manager-api-node │      │   workers/cheeko_worker.py         │
-│   - Device registry      │      │   workers/math_tutor_worker.py    │
-│   - OTA check/activate   │      │   workers/riddle_solver_worker.py │
-│   - RFID card lookup     │      │   workers/word_ladder_worker.py   │
-│   - Agent config/prompts │      └────────────────────────────────────┘
-│   - Content manifest     │
-│   - Child profiles       │
-│   - Analytics            │
-└─────────────────────────┘
+│  main/mqtt-gateway/                                                 │
+│  - EMQX broker bridge · UDP server (AES-128-CTR Opus)               │
+│  - VirtualMQTTConnection + LiveKitBridge per device                 │
+│  - Internal HTTP :8091 (settings push from Manager API)             │
+│  - AI Imagine shortcut: Opus ──► Imagine server ws :8090            │
+└───────┬──────────────────┬──────────────────────────┬───────────────┘
+        │ REST :8002       │ LiveKit (WebRTC)         │ WebSocket :8090
+        ▼                  ▼                          ▼
+┌──────────────────┐  ┌─────────────────────────┐  ┌──────────────────┐
+│ Manager API      │  │ LiveKit + Voice Agent   │  │ Imagine Server   │
+│ (Node/Express +  │  │ picoclaw-livekit (Go)   │  │ line_art (Py/    │
+│  Prisma 7)       │  │ - TEN VAD → STT → LLM   │  │  FastAPI)        │
+│ - Device registry│  │   → TTS pipeline        │  │ - Groq Whisper   │
+│ - OTA/activation │  │ - DB-driven personas    │  │ - FLUX.1-schnell │
+│ - Personas/agents│◄─┤   (AGENT.md/SOUL.md)    │  │ - printer bitmap │
+│ - Providers cfg  │  │ - K8s/EKS + HPA         │  │   + LCD JPEG     │
+│ - Content, RFID  │  └─────────────────────────┘  └────────┬─────────┘
+│ - Mobile API     │◄──────────── image bytes upload ───────┘
+│ - Analytics      │──► S3 ──► cdn.cheekoai.in URLs
+└──────┬───────────┘
+       │
+       ▼
+ PostgreSQL (DigitalOcean) · Qdrant · Mem0 · Firebase Auth · S3/CDN
+       │
+       ▼
+ manager-web (Vue admin) · admin-dashboard (persona editor) · Parent App (Flutter)
 ```
 
 All device-to-server communication starts with the Manager API (OTA), then shifts to the MQTT Gateway for real-time protocol.
@@ -50,12 +54,13 @@ All device-to-server communication starts with the Manager API (OTA), then shift
 
 | Service | Language | Port | Base Path | Notes |
 |---------|----------|------|-----------|-------|
-| manager-api-node | Node.js / Express | 8002 | `/toy` | Active implementation |
-| mqtt-gateway | Node.js | — | — | MQTT + UDP bridge |
-| livekit-server | Python | — | — | LiveKit agent workers |
-| manager-web | Vue.js | — | — | Admin dashboard |
+| manager-api-node | Node.js / Express | 8002 | `/toy` | Control plane; Swagger at `/toy/doc.html` |
+| mqtt-gateway | Node.js | 1883 (via EMQX), 8091 internal | `/internal` | MQTT + UDP bridge; internal HTTP for settings push |
+| Voice agent (picoclaw-livekit) | Go | 8192 | — | LiveKit agent worker; health/ready HTTP only |
+| Imagine server (line_art) | Python / FastAPI | 8090 | `/ws` | Voice → image WebSocket |
+| manager-web | Vue.js | — | — | Admin dashboard (nginx) |
+| admin-dashboard | Node.js | — | `/admin-dashboard` | Persona editor, proxied through manager-api |
 | MQTT broker (EMQX) | — | 1883 | — | Device MQTT endpoint |
-| Swagger / API Docs | — | 8002 | `/toy/doc.html` | OpenAPI UI |
 
 ## Boot-to-Conversation Flow: 8 Phases
 
@@ -116,61 +121,35 @@ Firmware opens UDP socket to server:port
 ### ESP32 Firmware
 - Implements the device state machine (`starting` → `activating` → `idle` → `connecting` → `listening` → `speaking`)
 - Manages MQTT connection lifecycle and publishes/subscribes to control topics
-- Sends mic audio as AES-128-CTR encrypted Opus frames over UDP (16kHz uplink)
-- Plays TTS audio received over UDP (24kHz downlink)
+- Sends mic audio as AES-128-CTR encrypted Opus frames over UDP (16kHz uplink); plays TTS audio received over UDP (24kHz downlink)
 - Handles RFID card tap events; maintains local SD card cache of content skills
 
 ### mqtt-gateway
-The gateway is the real-time protocol hub. It is organized into layers under `main/mqtt-gateway/`:
-
-| Layer | Directory | Purpose |
-|-------|-----------|---------|
-| Protocol handlers | `gateway/` | MQTT/UDP handlers: `mqtt-gateway.js`, `udp-server.js`, `emqx-broker.js` |
-| LiveKit integration | `livekit/` | `livekit-bridge.js`, `audio-processor.js`, `mcp-handler.js` |
-| Shared utilities | `core/` | `opus-initializer.js`, `worker-pool-manager.js` |
-| Config / logging | `utils/` | Logging, config management |
-
-For each device session the gateway maintains a `VirtualMQTTConnection` and a `LiveKitBridge`. It resamples uplink audio from 16kHz to 24kHz before forwarding to LiveKit.
+The real-time protocol hub (`main/mqtt-gateway/`). For each device session it maintains a `VirtualMQTTConnection` and a `LiveKitBridge`, resampling uplink audio from 16kHz to 24kHz before forwarding to LiveKit. It dispatches the Go voice agent by agent name into the room, forwards control commands over the LiveKit data channel, exposes an internal HTTP API on **:8091** that the Manager API calls to push `settings_update` messages to devices, and short-circuits AI Imagine sessions directly to the Imagine server.
 
 ### manager-api-node
-REST API serving both the gateway (config lookups) and the firmware (OTA). Base path `/toy`. Modules:
+The control plane. REST API on port 8002, base path `/toy`, Express 4 + Prisma 7 over PostgreSQL (DigitalOcean). Serves the firmware (OTA/activation), the gateway (config lookups), the voice agent (personas, provider config, session persistence), the parent app (Firebase-auth mobile API), and the admin surfaces. See [Manager API Overview](../backend/manager-api/overview.md).
 
-| Module | Path | Role |
-|--------|------|------|
-| agent | `src/routes/agent.routes.js` | Agent config and prompts per MAC |
-| device | `src/routes/device.routes.js` | Device registry, mode, character |
-| content | `src/routes/content.routes.js` | Music, stories, textbooks |
-| rfid | `src/routes/rfid.routes.js` | RFID card lookup and content manifest |
-| security / auth | `src/routes/auth.routes.js` | User authentication (Supabase Auth) |
-| analytics | `src/routes/analytics.routes.js` | Game sessions, media playback, usage stats |
-| profile | `src/routes/profile.routes.js` | Child profiles (mobile API) |
+### Voice agent (picoclaw-livekit)
+A Go LiveKit agent worker. Joins rooms dispatched by the gateway, runs TEN VAD → STT → LLM → TTS with per-session personas (AGENT.md/SOUL.md) and provider config pulled from the Manager API, persists sessions back, and runs on Kubernetes with HPA. See [Voice Agent Overview](../backend/voice-agent/overview.md).
 
-### livekit-server
-Python-based LiveKit agent workers. Each worker handles a specific mode:
-
-| Worker | Character | Triggered by |
-|--------|-----------|--------------|
-| `cheeko_worker.py` | Cheeko | Default / `conversation` mode |
-| `math_tutor_worker.py` | Math Tutor | Character set to `Math Tutor` |
-| `riddle_solver_worker.py` | Riddle Solver | Character set to `Riddle Solver` |
-| `word_ladder_worker.py` | Word Ladder | Character set to `Word Ladder` |
-
-The gateway resolves the active character (from Manager API) and dispatches the corresponding agent worker into the LiveKit room.
+### Imagine server (line_art)
+FastAPI voice-to-image service: Groq Whisper STT, two-layer child-safety moderation, FLUX.1-schnell generation, packed as thermal-printer bitmaps or 320×240 LCD JPEGs. See [Imagine Server](../imagine/overview.md).
 
 ## External Services
 
 | Service | Purpose |
 |---------|---------|
-| LiveKit Cloud | Real-time voice/video WebRTC infrastructure |
-| Groq / Google | LLM providers for conversation |
-| ElevenLabs / Edge-TTS | Text-to-speech synthesis |
-| Deepgram / Whisper | Speech-to-text transcription |
-| Qdrant | Vector search for semantic content matching |
-| Mem0 | Memory and personalization across sessions |
-| Grafana Loki | Centralized log aggregation |
-| Supabase | PostgreSQL database and auth for manager-api-node |
+| LiveKit | Real-time voice WebRTC infrastructure and agent dispatch |
+| PostgreSQL (DigitalOcean) | Primary database for manager-api (Prisma) and voice-provider tables |
+| Firebase Auth | Parent app authentication (Google / Apple Sign-In) |
+| AWS S3 + CloudFront (`cdn.cheekoai.in`) | Content and generated-image storage/delivery |
+| Deepgram / Groq / AssemblyAI / others | STT providers (DB-selectable) |
+| ElevenLabs / Deepgram Aura / Cartesia / Inworld | TTS providers |
+| Anthropic / OpenAI / Gemini / Bedrock / others | LLM providers (Manager-selectable) |
+| HuggingFace / ComfyUI (FLUX.1-schnell) | Image generation for AI Imagine / AI Printer |
+| TEN VAD | On-worker voice activity detection |
+| Qdrant | Vector search for RFID/content RAG |
+| Mem0 | Long-term memory and personalization |
 | EMQX | MQTT broker for device-to-gateway messaging |
-
-:::tip CI/CD
-CircleCI (`.circleci/config.yml`) handles branch-specific deployments, Docker builds for each component, and EMQX broker deployment.
-:::
+| Kubernetes (EKS) | Voice agent production runtime (HPA, PDB) |

@@ -65,7 +65,7 @@ Sent immediately after MQTT connect. Requests a UDP audio channel.
 }
 ```
 
-`mode` values: `manual` (PTT button held) | `auto` (VAD-based) | `realtime` (continuous)
+`mode` values: `manual` (PTT button held) | `auto` (VAD-based). The gateway validates against these two only and defaults to `manual`.
 
 ### `listen` — stop
 
@@ -189,6 +189,7 @@ Response to device hello. Contains UDP channel credentials.
 
 | Field | Notes |
 |-------|-------|
+| `udp.port` | The gateway's `UDP_PORT` (code default 1883; deployments typically 8884) |
 | `udp.key` | AES-128-CTR key — hex string, 16 bytes (32 hex chars) |
 | `udp.nonce` | AES-128-CTR nonce — hex string, 16 bytes (32 hex chars) |
 | `udp.connection_id` | Included in every UDP packet header |
@@ -217,9 +218,9 @@ Sent after gateway queries Manager API for device mode and character. Sent after
 
 `mode` values: `conversation` | `music` | `story`
 
-`listening_mode` values: `auto` | `manual` | `realtime`
+`listening_mode` values: `auto` | `manual`
 
-`character` values: `Cheeko` | `Math Tutor` | `Riddle Solver` | `Word Ladder`
+`character` is only included when `mode` is `conversation`. Character names are dynamic — they come from the Manager API's character rows (e.g. `Cheeko`, `Math Tutor`), not a fixed enum; the same Go voice agent serves all of them as personas.
 
 ### `tts` — start
 

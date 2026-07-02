@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Database Schema Reference
 
-Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents every model in the schema, grouped by domain.
+Cheeko uses managed PostgreSQL (DigitalOcean; some environments still run a Supabase pooler URL) with Prisma ORM — 68 models in `prisma/schema.prisma`. This page lists every model grouped by domain, with field-level detail for the most important ones.
 
 ## Entity Relationship Overview
 
@@ -21,8 +21,28 @@ Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents
 
 ### Devices
 - `ai_device` — registered ESP32 devices
+- `device_settings` — per-device settings (quiet hours, autoplay, notifications)
+- `device_runtime_state` — last reported device state
+- `device_sync_event` — settings sync events/acks
+- `device_analytics_event` — raw analytics events from devices
 - `device_memories` — per-device daily memory files
 - `device_token_usage` — daily LLM token and latency metrics per device
+- `device_token_usage_session` — per-session token usage detail
+
+### Voice Sessions (Go voice agent)
+- `voice_sessions` — one row per LiveKit voice session
+- `voice_session_messages` — per-session message turns
+- `voice_session_summaries` — room-close session summaries
+
+### Workspace (Go voice agent)
+- `device_workspace_artifacts` — synced per-device workspace files
+- `workspace_locks` — distributed per-device workspace locks (fencing tokens)
+- `device_memory_documents` / `device_memory_chunks` — newer document-based memory storage
+
+### Voice Provider Registries (served via `/toy/livekit`)
+- `stt_providers` — STT provider configs (single active row)
+- `tts_providers` — TTS provider configs
+- `llm_providers` — LLM provider configs
 
 ### Agents and AI
 - `ai_agent` — user-created agent configurations
@@ -38,9 +58,6 @@ Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents
 - `ai_textbook` — textbook entries
 - `ai_textbook_chapter` — chapters within a textbook
 - `content_library` — unified content catalogue
-- `device_playlist` — per-device content playlist
-- `music_playlist` — device-specific music ordering
-- `story_playlist` — device-specific story ordering
 
 ### RFID
 - `rfid_series` — UID range-to-content mappings
@@ -56,6 +73,8 @@ Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents
 - `ai_rfid_scan_log` — legacy scan event log
 - `rfid_tags` — simplified RFID tag registry
 - `rfid_scan_log` — simplified scan log
+- `rfid_card_tap_log` — card tap events
+- `rfid_category` — RFID category definitions
 
 ### Kids
 - `kid_profile` — child profile linked to a parent user
@@ -69,6 +88,7 @@ Cheeko uses DigitalOcean Managed PostgreSQL with Prisma ORM. This page documents
 - `analytics_streaks` — daily usage streak tracking
 - `analytics_user_progress` — aggregate per-device progress counters
 - `game_session` — legacy game session records
+- `device_usage_daily` / `device_card_taps_daily` / `device_ai_interactions_daily` / `device_games_played` / `device_radio_played` — per-device daily rollups
 
 ### System
 - `sys_params` — key-value system configuration parameters
@@ -144,8 +164,10 @@ Purpose: Extended profile for parent users, covering notification preferences an
 | onboarding_completed | Boolean | Yes | Whether onboarding flow is done |
 | terms_accepted_at | DateTime | Yes | Timestamp when terms were accepted |
 | terms_version | String (20) | Yes | Version of terms accepted |
-| openclaw_url | String | Yes | OpenClaw server URL for this parent |
-| openclaw_token | String | Yes | OpenClaw auth token |
+| fcm_token | String | Yes | Firebase Cloud Messaging token for push notifications |
+| country_region | String | Yes | Country/region |
+| privacy_policy_accepted_at | DateTime | Yes | Privacy policy acceptance timestamp |
+| consent_accepted_at | DateTime | Yes | Consent acceptance timestamp |
 | created_at | DateTime | Yes | Record creation time |
 | updated_at | DateTime | Yes | Record update time |
 
@@ -192,8 +214,6 @@ Purpose: Registered ESP32 Cheeko devices, linking a physical MAC address to a us
 | create_date | DateTime | Yes | Record creation time |
 | updater | BigInt | Yes | User ID of last updater |
 | update_date | DateTime | Yes | Record update time |
-| openclaw_url | String | Yes | OpenClaw server URL for this device |
-| openclaw_token | String | Yes | OpenClaw auth token for this device |
 
 ---
 
@@ -263,7 +283,9 @@ Purpose: A user-configured AI agent that defines which ASR, LLM, TTS, and other 
 | mem_model_id | UUID | Yes | FK to ai_model_config (memory) |
 | intent_model_id | UUID | Yes | FK to ai_model_config (intent) |
 | chat_history_conf | Int | Yes | Chat history window size (default: 0) |
-| system_prompt | String | Yes | Base system prompt text |
+| system_prompt | String | Yes | Base system prompt text (rendered into AGENT.md by the voice agent) |
+| soul | String | Yes | Personality prompt (rendered into SOUL.md by the voice agent) |
+| runtime_agent_name | String | Yes | LiveKit runtime agent to dispatch (NULL → default `cheeko-agent`) |
 | summary_memory | String | Yes | Persisted summary memory string |
 | lang_code | String (10) | Yes | BCP-47 language code (default: "en") |
 | language | String (50) | Yes | Language name (default: "English") |
@@ -384,22 +406,6 @@ Purpose: Unified content catalogue entry that can represent music, stories, or o
 | status | Int | Yes | 1 = active |
 | created_at | DateTime | Yes | Record creation time |
 | updated_at | DateTime | Yes | Record update time |
-
----
-
-### device_playlist
-
-Purpose: Associates content library items with a device as a playlist entry.
-
-| Field | Type | Nullable | Description |
-|---|---|---|---|
-| id | BigInt (autoincrement) | No | Primary key |
-| device_id | BigInt | Yes | Device identifier (legacy integer) |
-| mac_address | String (50) | Yes | Device MAC address |
-| content_id | BigInt | Yes | FK to content_library |
-| playlist_type | String (50) | Yes | Playlist category (default: "music") |
-| position | Int | Yes | Ordering position |
-| created_at | DateTime | Yes | Record creation time |
 
 ---
 

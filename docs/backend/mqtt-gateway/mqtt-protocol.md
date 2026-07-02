@@ -133,7 +133,7 @@ Sent when the user taps a character change button.
 }
 ```
 
-**Gateway action:** Updates the character in the database via manager API, closes the old agent, dispatches the new agent (e.g., `math-tutor-agent`), streams a character-change audio cue via UDP, and sends `mode_update` with the new character name.
+**Gateway action:** Updates the character in the database via manager API, closes the old agent, re-dispatches the voice agent (the character's `runtimeAgentName`, or the default `cheeko-agent` — the new persona is applied by the worker, not by switching processes), streams a character-change audio cue via UDP, and sends `mode_update` with the new character name.
 
 ---
 
@@ -155,7 +155,7 @@ Sent by the device in response to an MCP tool call. Contains a JSON-RPC 2.0 resu
 }
 ```
 
-**Gateway action:** If a pending promise exists for this `id` (e.g., from a volume adjust), it resolves or rejects the promise. Otherwise, the response is forwarded to the LiveKit agent via data channel.
+**Gateway action:** The response is forwarded to the voice agent over the LiveKit data channel (`forwardMcpResponse`); the gateway's `McpHandler` clears its pending-request entry for the `id` but does not resolve a promise on this path.
 
 ---
 
@@ -295,6 +295,10 @@ Signals TTS (text-to-speech / audio playback) state changes.
   "timestamp": 1700000000000
 }
 ```
+
+:::note
+`livekit/message-handlers.js` contains a legacy sender using `tts_start` / `tts_stop` message types — that path is dead code. The live send path is in `livekit-bridge.js` and uses the `type:"tts", state:"start"|"sentence_start"|"stop"` forms shown above.
+:::
 
 ---
 

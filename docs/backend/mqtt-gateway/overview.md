@@ -7,7 +7,7 @@ sidebar_position: 1
 
 ![MQTT Gateway](/img/gateway-header.jpeg)
 
-The MQTT Gateway is a Node.js protocol bridge that sits between ESP32 Cheeko devices and the LiveKit WebRTC cloud. Devices communicate using MQTT over TCP and raw UDP; the gateway translates those into LiveKit room connections and WebRTC audio tracks so the AI agents running in `livekit-server` can talk to children in real time.
+The MQTT Gateway is a Node.js protocol bridge that sits between ESP32 Cheeko devices and the LiveKit WebRTC cloud. Devices communicate using MQTT over TCP and raw UDP; the gateway translates those into LiveKit room connections and WebRTC audio tracks so the **Go voice agent (picoclaw-livekit)** can talk to children in real time. It also exposes an internal HTTP API (`:8091`) for settings push from the Manager API, and short-circuits **AI Imagine** sessions to the [Imagine server](../../imagine/overview.md) without involving LiveKit.
 
 **MQTT (control messages)**
 ```
@@ -25,7 +25,8 @@ ESP32 Device ◄──► MQTTGateway  (AES-128-CTR encrypted Opus, bidirectiona
 ```
 MQTTGateway
   └── VirtualMQTTConnection  (one per connected device)
-        ├── LiveKitBridge ──► LiveKit Cloud Room ◄──► AI Agent (livekit-server)
+        ├── LiveKitBridge ──► LiveKit Room ◄──► Voice Agent (Go, cheeko-agent)
+        ├── Imagine path ──► Imagine server ws :8090  (ai_imagine sessions, no LiveKit)
         └── UDP crypto layer ◄──► ESP32 Device (encrypted audio)
 ```
 
@@ -35,7 +36,7 @@ MQTTGateway
 
 | Layer | Directory | Files | Responsibility |
 |---|---|---|---|
-| Entry point | `/` | `app.js` | Environment validation, Opus init, `MQTTGateway` startup, signal handlers |
+| Entry point | `/` | `app.js` | Environment validation, Opus init, `MQTTGateway` startup, internal command server (`:8091`), health server (`:8004`), signal handlers |
 | Gateway | `gateway/` | `mqtt-gateway.js` | Main orchestrator; EMQX connection, UDP socket, per-device lifecycle |
 | Gateway | `gateway/` | `device-handlers.js` | Hello/goodbye/mode-change/character-change handler helpers |
 | Gateway | `gateway/` | `emqx-broker.js` | Standalone `EmqxBroker` class with wildcard topic matching |
@@ -49,14 +50,18 @@ MQTTGateway
 | MQTT | `mqtt/` | `message-parser.js` | Parsing helpers for hello/goodbye/abort/mode-change/character-change |
 | MQTT | `mqtt/` | `virtual-connection.js` | `VirtualMQTTConnection`; per-device MQTT session state, UDP crypto, bridge lifecycle |
 | MQTT | `/` | `mqtt-protocol.js` | Raw MQTT 3.1.1 parser/encoder (CONNECT, PUBLISH, SUBSCRIBE, PINGREQ, DISCONNECT) |
+| Gateway | `gateway/` | `internal-command-server.js` | Internal HTTP server on `:8091`; settings publish-update from Manager API |
+| Gateway | `gateway/` | `health-server.js` | Health HTTP server on `:8004` (`GET /health`) |
+| Imagine | `imagine/` | `imagine-client.js`, `imagine-messages.js`, `imagine-orchestrator.js`, `imagine-upload.js` | AI Imagine: WebSocket client to the Imagine server, MQTT result messages, upload to Manager API |
 | Core | `core/` | `opus-initializer.js` | `@discordjs/opus` encoder/decoder init |
 | Core | `core/` | `worker-pool-manager.js` | `WorkerPoolManager`; 4–8 worker threads for audio encoding/decoding |
+| Core | `core/` | `streaming-crypto.js` | AES-128-CTR encrypt/decrypt for the UDP audio path |
 | Core | `core/` | `media-api-client.js` | Cerebrium API base URL and axios config for music/story bots |
-| Core | `core/` | `mem0-client.js`, `mem0-integration.js` | Mem0 long-term memory fetch for agent dispatch metadata |
+| Core | `core/` | `mem0-integration.js` | Agent dispatch metadata; defines `DEFAULT_RUNTIME_AGENT` (`LIVEKIT_DEFAULT_AGENT`, default `cheeko-agent`) |
 | Core | `/` | `audio-worker.js` | Worker thread; Opus encode/decode per session |
 | Constants | `constants/` | `audio.js` | Sample rates, frame sizes, channel count |
 | Utils | `utils/` | `config-manager.js` | JSON config file loader (`mqtt.json`) |
-| Utils | `utils/` | `logger.js` | Pino/Winston logger |
+| Utils | `utils/` | `logger.js` | Winston logger (daily rotate + Loki transport) |
 | Utils | `utils/` | `debug-logger.js`, `console-override.js` | Debug namespace setup |
 
 ---
@@ -95,17 +100,20 @@ EMQX republishes all device messages to `internal/server-ingest`. The gateway re
 
 ### 4. Deferred setup (background)
 
-While the device starts streaming audio, the gateway runs parallel DB queries to fetch:
+While the device starts streaming audio, the gateway runs parallel Manager API queries to fetch:
 - Room type (`conversation` / `music` / `story`)
 - PTT mode (`auto` / `manual`)
 - Current character (e.g., `Cheeko`, `Math Tutor`)
 - Child profile
-- Mem0 long-term memories
 
 After queries complete it:
 1. Sends a `mode_update` MQTT message with the actual values
 2. Creates a `LiveKitBridge` and connects to a LiveKit room named `<uuid>_<mac>_<roomType>`
-3. Dispatches the appropriate AI agent via `AgentDispatchClient`
+3. Dispatches the voice agent via `AgentDispatchClient` — the agent name is the character's `runtimeAgentName` from the Manager API, or `LIVEKIT_DEFAULT_AGENT` (default **`cheeko-agent`**, the Go worker) when unset. There is no per-character agent map anymore; character identity is applied by the worker as a persona.
+
+:::note ai_imagine sessions
+If the device hello carries `"feature": "ai_imagine"`, the LiveKit bridge is skipped entirely: decrypted Opus frames are buffered (max ~2 min) and, on `speech_end` / listen-stop, sent to the Imagine server over WebSocket. The resulting image is uploaded to `POST /toy/imagine/upload` and delivered to the device as an MQTT `image` message with a CDN URL (`image_status` while generating, `image_error` with `no_speech` / `safety_block` / `rate_limited` / `generation_failed` on failure).
+:::
 
 ### 5. Audio streaming
 
@@ -145,6 +153,22 @@ One instance per connected device, stored in `MQTTGateway.connections`.
 One instance per active device session, held by `VirtualMQTTConnection.bridge`.
 
 Connects the gateway as a participant in the LiveKit room, publishes device audio as a track, subscribes to agent audio tracks, and routes data channel messages in both directions.
+
+---
+
+## Settings Sync (internal HTTP API, :8091)
+
+The Manager API pushes device settings through the gateway's internal command server (`gateway/internal-command-server.js`), authenticated with an `X-Service-Key` header (`MANAGER_API_SECRET` or `SERVICE_SECRET_KEY`):
+
+| Method + Path | Purpose |
+|---|---|
+| `POST /internal/settings/publish-update` | Publish a `settings_update` MQTT message to a device (body: `{mac_address, sender_client_id, message}`) |
+| `POST /internal/settings/ping` | Publish a `settings_ping` |
+| `GET /health` | Internal health check |
+
+Responses: `200` published, `202` queued (device has no active route yet), `400` bad/unroutable, `401` unauthorized.
+
+In the other direction, device messages `settings_ack`, `settings_get`, `settings_changed`, `device_state`, and analytics events are forwarded to the Manager API's `/toy/device-sync/*` endpoints.
 
 ---
 
@@ -204,16 +228,26 @@ Environment variables (`EMQX_HOST`, `LIVEKIT_URL`, etc.) override the correspond
 
 | Variable | Default | Description |
 |---|---|---|
-| `UDP_PORT` | `1883` | UDP port for device audio streaming |
+| `UDP_PORT` | `1883` (code); `.env.example` ships `8884` | UDP port for device audio streaming |
 | `PUBLIC_IP` | `127.0.0.1` | Public IP address returned to devices in hello response |
 | `EMQX_HOST` | (from `mqtt.json`) | EMQX broker hostname |
 | `EMQX_PORT` | (from `mqtt.json`) | EMQX broker port |
 | `EMQX_PROTOCOL` | (from `mqtt.json`) | MQTT protocol (`mqtt`, `mqtts`) |
+| `MQTT_SIGNATURE_KEY` | — | MQTT credential signature key |
 | `LIVEKIT_URL` | (from `mqtt.json`) | LiveKit server WebSocket URL |
 | `LIVEKIT_API_KEY` | (from `mqtt.json`) | LiveKit API key |
 | `LIVEKIT_API_SECRET` | (from `mqtt.json`) | LiveKit API secret |
-| `MANAGER_API_URL` | — | Base URL for manager API, e.g. `http://localhost:3000/toy` |
-| `MANAGER_API_SECRET` | — | Secret header value for internal manager API calls |
+| `LIVEKIT_DEFAULT_AGENT` | `cheeko-agent` | Agent name dispatched when the character has no `runtimeAgentName` |
+| `MANAGER_API_URL` | — | Base URL for manager API, e.g. `http://127.0.0.1:8002/toy` |
+| `MANAGER_API_SECRET` | — | Sent as `X-Service-Key` on internal manager API calls |
+| `MQTT_GATEWAY_INTERNAL_HOST` / `MQTT_GATEWAY_INTERNAL_PORT` | `127.0.0.1` / `8091` | Internal command HTTP server (settings push) |
+| `HEALTH_HOST` / `HEALTH_PORT` | `0.0.0.0` / `8004` | Health HTTP server |
+| `LINE_ART_WS_URL` | `ws://127.0.0.1:8090/ws` | Imagine server WebSocket |
+| `IMAGINE_TIMEOUT_MS` | `90000` | Imagine generation timeout |
 | `MEDIA_API_BASE` | Cerebrium endpoint | Base URL for music/story bot API |
 | `CEREBRIUM_API_TOKEN` | — | **Required.** Bearer token for Cerebrium API. Process exits if unset. |
-| `LOKI_HOST` | — | Optional Grafana Loki host for centralized logging |
+| `MEM0_API_KEY` / `MEM0_API_URL` | — | Mem0 memory service |
+| `SENDER_ROUTE_TTL_MS` | 24 h | TTL for sender client-id routes |
+| `LOG_LEVEL` | `info` | Log verbosity |
+| `LOKI_HOST` / `LOKI_USER` / `LOKI_PASSWORD` | — | Optional Grafana Loki log shipping |
+| `ANALYTICS_AUDIT_LOG_ENABLED` / `_PATH` / `_INCLUDE_PAYLOAD` | — | Analytics audit log |

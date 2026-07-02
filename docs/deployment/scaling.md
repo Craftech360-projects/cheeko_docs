@@ -5,7 +5,11 @@ sidebar_position: 3
 
 # Scaling the MQTT Gateway
 
-This page documents the approved design for scaling the MQTT Gateway from ~50-100 to 1000 concurrent ESP32 device connections.
+This page documents the **approved design** for scaling the MQTT Gateway from ~50-100 to 1000 concurrent ESP32 device connections.
+
+:::caution Design, not current state
+The multi-instance layout below (4 gateway processes, `$share/gateway/` subscriptions, per-instance UDP ports, PM2 apps `gateway-1..4`) is **not implemented yet**. Today a single gateway process runs (`ecosystem.config.js` app `xz-mqtt`), subscribing to plain `internal/server-ingest`, with `UDP_PORT=8884`. The **voice agent** scales independently on Kubernetes: LiveKit-dispatched workers with an HPA and `MaxSessions=100` per pod — see [Voice Agent — Config & Deployment](../backend/voice-agent/config-deployment.md).
+:::
 
 ---
 
@@ -34,7 +38,8 @@ Droplet 2 - API Box (2 CPU / 4 GB)
 
 Cloud Services (existing):
 +-- LiveKit Cloud Scale plan - 5000 concurrent connections
-+-- Cerebrium (AI agents, hosted separately)
++-- Kubernetes/EKS (voice agent workers, HPA)
++-- Cerebrium (music/story media bots only)
 +-- DigitalOcean PostgreSQL
 ```
 
@@ -196,7 +201,7 @@ Realistic load at 1000 devices (30% talk time): ~10,000 fps. 16 workers at 32,00
 
 ## LiveKit Cloud Plan
 
-Agents are hosted on Cerebrium (not LiveKit Agents), so they join as regular participants. The LiveKit "concurrent agent sessions" limit does not apply.
+The conversation agent (picoclaw-livekit) is a **LiveKit named agent worker** dispatched via `AgentDispatchClient` and deployed on Kubernetes — so LiveKit's agent-session model applies to it. Cerebrium hosts only the music/story media bots, which join as regular participants.
 
 | Plan | Cost | Concurrent Connections | WebRTC min/mo | Fits 1000 devices? |
 |------|------|----------------------|---------------|---------------------|

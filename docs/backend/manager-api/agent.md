@@ -7,7 +7,7 @@ sidebar_position: 4
 
 AI agent configuration, character management, and chat history. Base path: `/toy/agent`.
 
-An **agent** is a named AI persona (e.g. "Cheeko", "Dino") with its own system prompt, model configuration, and language settings. Each device is linked to one agent; the MQTT gateway and LiveKit server read agent config at session start.
+An **agent** is a named AI persona (e.g. "Cheeko", "Dino") with its own system prompt (`system_prompt`), personality (`soul`), model configuration, and language settings. Each device is linked to one agent; the MQTT gateway and the Go voice agent read agent config at session start.
 
 ## Endpoint Summary
 
@@ -54,13 +54,34 @@ An **agent** is a named AI persona (e.g. "Cheeko", "Dino") with its own system p
 | `POST` | `/toy/agent/chat-history/report` | None | Report single message in real-time |
 | `POST` | `/toy/agent/chat-history/session` | None | Batch upload all messages for a session |
 | `GET` | `/toy/agent/:id/sessions` | User | List sessions for an agent |
-| `GET` | `/toy/agent/:id/history/:sessionId` | User | Get messages for a session |
+| `GET` | `/toy/agent/:id/chat-history/:sessionId` | User | Get messages for a session |
+| `GET` | `/toy/agent/:id/chat-history/user` | User | User-side messages only |
+| `GET` | `/toy/agent/:id/chat-history/audio` | User | Audio messages |
+
+### Voice agent (service-key) endpoints
+
+Used by the Go voice agent (picoclaw-livekit) with the `X-Service-Key` header:
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/toy/agent/device/:mac/bootstrap` | Session bootstrap: persona, child profile, recent memories (`includeMemories`, `recentLimit`) |
+| `GET` | `/toy/agent/character/by-name/:name/session` | Persona pull by character name |
+| `GET` | `/toy/agent/character/:id/session` | Persona pull by character ID (`language` query) |
+| `PUT` | `/toy/agent/device/:mac/sessions/:sessionId/summary` | Store session summary |
+| `POST` | `/toy/agent/device/:mac/sessions/:sessionId/end` | Mark session ended |
+| `GET` | `/toy/agent/device/:mac/sessions/:sessionId/messages` | Read session messages (cursor pagination) |
+| `GET` | `/toy/agent/device/:mac/memory` | Read device memories |
+| `POST` | `/toy/agent/device/:mac/memory/documents` | Store memory documents |
+| `GET/PUT` | `/toy/agent/device/:mac/workspace-files`, `/workspace-sync` | Workspace file sync (dual auth; 409 on revision conflict) |
+| `GET/PUT` | `/toy/agent/device/:mac/artifacts` (+ `/content`) | Workspace artifacts |
+| `POST` | `/toy/agent/device/:mac/workspace-lock/acquire` / `heartbeat` / `release` | Distributed workspace locks (fencing tokens, `preempt` for last-tap-wins) |
+| `PUT` | `/toy/agent/saveMemory/:mac` | Persist summary memory (no auth) |
 
 ---
 
 ## GET `/toy/agent/config/:mac`
 
-The most important endpoint in the system. Called by the MQTT gateway and LiveKit server at the start of every voice session to get the full agent configuration for the connected device.
+The most important endpoint in the system. Called by the MQTT gateway and the voice agent at the start of every voice session to get the full agent configuration for the connected device.
 
 ### Path Parameters
 
@@ -112,7 +133,7 @@ Returns `404` if the device or its linked agent is not found.
 
 ## GET `/toy/agent/device/:mac/agent-id`
 
-Used by the LiveKit server to resolve the agent ID for a device MAC before starting a session.
+Used by the voice agent to resolve the agent ID for a device MAC before starting a session.
 
 ### Response
 
@@ -138,7 +159,12 @@ Returns the character name currently assigned to the device. Used by the MQTT ga
 {
   "code": 0,
   "msg": "success",
-  "data": { "characterName": "Cheeko" }
+  "data": {
+    "characterName": "Cheeko",
+    "characterId": "550e8400-e29b-41d4-a716-446655440000",
+    "runtimeAgentName": null,
+    "language": "en"
+  }
 }
 ```
 
@@ -382,7 +408,7 @@ Returns paginated list of unique session IDs for an agent.
 }
 ```
 
-### GET `/toy/agent/:id/history/:sessionId`
+### GET `/toy/agent/:id/chat-history/:sessionId`
 
 Returns all messages in a session, ordered by `created_at` ascending.
 

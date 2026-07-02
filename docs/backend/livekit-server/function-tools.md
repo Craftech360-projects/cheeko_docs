@@ -3,6 +3,10 @@ id: function-tools
 sidebar_position: 4
 ---
 
+:::warning Deprecated
+The Python livekit-server has been replaced by the **Go voice agent (picoclaw-livekit)**, which ports the picoclaw tool system with a voice allowlist — see [Workspace & Persona](../voice-agent/workspace-persona.md). This page is kept for historical reference.
+:::
+
 # AI Function Tools
 
 These are the LLM-callable functions registered with the LiveKit agent session. When the AI decides to perform an action — play music, change volume, check a math answer, switch modes — it invokes one of these tools. The tools are defined under `main/livekit-server/src/features/` and loaded into the agent at session startup using a lazy-loading pattern implemented in `src/agent/assistant.py`.

@@ -3,6 +3,10 @@ id: cheeko-agent
 sidebar_position: 2
 ---
 
+:::warning Deprecated
+The Python livekit-server has been replaced by the **Go voice agent (picoclaw-livekit)** — see [Voice Agent Overview](../voice-agent/overview.md). The Python code remains at `main/livekit-server` but is no longer deployed. This page is kept for historical reference.
+:::
+
 # Cheeko Agent (Main Conversation Worker)
 
 `workers/cheeko_worker.py` is the primary conversational agent. It handles free-form voice conversation, RFID card interactions (rhymes, animal sounds, story prompts), and mode switching to game workers. It runs as a LiveKit agent worker registered under the name `cheeko-agent` on port 8081.

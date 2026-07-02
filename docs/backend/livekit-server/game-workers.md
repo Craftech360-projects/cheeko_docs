@@ -3,6 +3,10 @@ id: game-workers
 sidebar_position: 3
 ---
 
+:::warning Deprecated
+The Python livekit-server has been replaced by the **Go voice agent (picoclaw-livekit)**. Game characters are now personas resolved from the Manager API database rather than separate worker processes — see [Workspace & Persona](../voice-agent/workspace-persona.md). This page is kept for historical reference.
+:::
+
 # Game Workers
 
 Three specialized workers handle interactive games for children. All three share the same infrastructure as the main cheeko_worker but differ in the LLM-callable tools, game state management, and greeting behavior.
