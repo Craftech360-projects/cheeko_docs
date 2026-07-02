@@ -11,7 +11,7 @@ const config = {
   baseUrl: '/',
 
   organizationName: 'Craftech360-projects',
-  projectName: 'cheeko-backend',
+  projectName: 'cheeko_docs',
 
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
@@ -29,6 +29,7 @@ const config = {
         docs: {
           sidebarPath: './sidebars.js',
           routeBasePath: '/',
+          editUrl: 'https://github.com/Craftech360-projects/cheeko_docs/edit/main/',
         },
         blog: false,
         theme: {
@@ -45,8 +46,17 @@ const config = {
         title: 'Cheeko Docs',
         items: [
           { type: 'docSidebar', sidebarId: 'mainSidebar', position: 'left', label: 'Docs' },
-          { href: 'https://github.com/Craftech360-projects/cheeko-backend', label: 'Backend Repo', position: 'right' },
-          { href: 'https://github.com/Craftech360-projects/CheekoAI-Parent-App', label: 'Parent App Repo', position: 'right' },
+          {
+            label: 'Repos',
+            position: 'right',
+            items: [
+              { href: 'https://github.com/Craftech360-projects/cheeko_docs', label: 'Docs Site' },
+              { href: 'https://github.com/Craftech360-projects/cheeko-backend', label: 'Backend' },
+              { href: 'https://github.com/Craftech360-projects/picoclaw-chat', label: 'Voice Agent (picoclaw)' },
+              { href: 'https://github.com/Craftech360-projects/line_art', label: 'Imagine Server (line_art)' },
+              { href: 'https://github.com/Craftech360-projects/CheekoAI-Parent-App', label: 'Parent App' },
+            ],
+          },
         ],
       },
       footer: {
