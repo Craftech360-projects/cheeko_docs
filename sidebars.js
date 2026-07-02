@@ -87,7 +87,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'Deployment',
-      items: ['deployment/environment', 'deployment/pm2', 'deployment/scaling'],
+      items: ['deployment/environment', 'deployment/pm2', 'deployment/scaling', 'deployment/monitoring'],
     },
   ],
 };
