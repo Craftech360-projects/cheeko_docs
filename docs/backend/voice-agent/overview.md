@@ -7,7 +7,7 @@ sidebar_position: 1
 
 The Cheeko voice agent is a **Go LiveKit agent worker** built on a fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw), an ultra-lightweight Go AI agent framework. It replaces the previous Python `livekit-server` workers: instead of one Python process per game character, a single Go binary (`picoclaw-livekit`) serves all characters by pulling **personas** from the Manager API database per session.
 
-The repo lives at `picoclaw/` (module `github.com/sipeed/picoclaw`, Go 1.25). The voice binary is built from `cmd/picoclaw-livekit/` and is distinct from the generic picoclaw CLI and chat channels also present in the repo.
+**Repository:** [Craftech360-projects/picoclaw-chat](https://github.com/Craftech360-projects/picoclaw-chat) (Go module `github.com/sipeed/picoclaw`, Go 1.25). The voice binary is built from `cmd/picoclaw-livekit/` and is distinct from the generic picoclaw CLI and chat channels also present in the repo.
 
 ## What changed vs the Python livekit-server
 

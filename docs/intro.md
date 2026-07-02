@@ -16,10 +16,10 @@ Cheeko is an AI companion for children (ages 3–16) running on ESP32 devices, b
 
 | Component | Language | Role |
 |-----------|----------|------|
-| **Voice Agent (picoclaw-livekit)** | Go | AI voice agent — LiveKit worker running VAD → STT → LLM → TTS with DB-driven personas. Replaced the Python livekit-server. |
+| **[Voice Agent (picoclaw-livekit)](https://github.com/Craftech360-projects/picoclaw-chat)** | Go | AI voice agent — LiveKit worker running VAD → STT → LLM → TTS with DB-driven personas. Replaced the Python livekit-server. |
 | **manager-api-node** | Node.js / Express + Prisma | REST API — device registry, OTA, agent/persona config, content, analytics, mobile API. PostgreSQL (DigitalOcean). |
 | **mqtt-gateway** | Node.js | Protocol bridge: MQTT/UDP (ESP32) ↔ LiveKit WebRTC; also routes AI Imagine audio to the Imagine server |
-| **Imagine Server (line_art)** | Python / FastAPI | Voice → image generation (FLUX.1-schnell): thermal-printer bitmaps and LCD images |
+| **[Imagine Server (line_art)](https://github.com/Craftech360-projects/line_art)** | Python / FastAPI | Voice → image generation (FLUX.1-schnell): thermal-printer bitmaps and LCD images |
 | **manager-web** | Vue.js | Admin dashboard for devices, users, models, and content |
 | **admin-dashboard** | Node.js | Persona editor (AGENT.md / SOUL.md) proxying to the Manager API |
 | **ESP32 Firmware** | C++ / ESP-IDF | On-device client — state machine, audio pipeline, MQTT, RFID |

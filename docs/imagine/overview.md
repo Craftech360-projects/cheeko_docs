@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Imagine Server Overview
 
-The Imagine server (repo `line_art/`) is a Python **FastAPI** service that turns a child's spoken (or typed) prompt into an image. One pipeline serves two device features:
+The Imagine server (repo [Craftech360-projects/line_art](https://github.com/Craftech360-projects/line_art)) is a Python **FastAPI** service that turns a child's spoken (or typed) prompt into an image. One pipeline serves two device features:
 
 | Feature | Output | Gate |
 |---|---|---|
