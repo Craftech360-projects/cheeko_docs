@@ -3,7 +3,7 @@
 
 export const ALLOWED_DOMAINS = ['craftech360.com', 'altio.me'];
 export const SESSION_COOKIE = '__docs_session';
-export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
+export const SESSION_TTL_SECONDS = 24 * 60 * 60; // 1 day
 
 const enc = new TextEncoder();
 
